@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adopt a Street Dog</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #faf9f8;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: #2c3e2f;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        h2 {
+            font-size: 1.8rem;
+            color: #2c3e2f;
+            text-align: center;
+            margin: 2rem 0 1rem;
+        }
+
+        .subhead {
+            text-align: center;
+            color: #666;
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #eee;
+        }
+
+        .card h3 {
+            color: #2c3e2f;
+            margin-bottom: 0.75rem;
+            font-size: 1.3rem;
+        }
+
+        .card p {
+            color: #555;
+            font-size: 0.95rem;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            background: #f0f2e9;
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 2rem 0;
+        }
+
+        .two-column ul {
+            list-style: none;
+        }
+
+        .two-column li {
+            margin-bottom: 0.75rem;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .two-column li::before {
+            content: "✓";
+            color: #2c7a3e;
+            position: absolute;
+            left: 0;
+        }
+
+        blockquote {
+            font-style: italic;
+            font-size: 1.2rem;
+            text-align: center;
+            color: #555;
+            border-left: 4px solid #2c7a3e;
+            padding: 1rem;
+            margin: 2rem 0;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        .cta {
+            text-align: center;
+            background: #2c3e2f;
+            color: white;
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 2rem 0;
+        }
+
+        .cta h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .button {
+            display: inline-block;
+            background: #ffaa33;
+            color: #2c3e2f;
+            padding: 0.75rem 2rem;
+            border-radius: 40px;
+            text-decoration: none;
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+
+        footer {
+            text-align: center;
+            color: #888;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid #ddd;
+        }
+
+        @media (max-width: 700px) {
+            .container {
+                padding: 1rem;
+            }
+            .two-column {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Adopt a Street Dog</h1>
+        <div class="subhead">Give a Survivor a Second Chance</div>
+
+        <p style="text-align: center; max-width: 700px; margin: 0 auto;">Every street dog carries a story of survival. When you open your heart and home to one, you're not just adopting a pet—you're offering a lifetime of safety and love.</p>
+
+        <h2>Understanding Their Needs</h2>
+        <p style="text-align: center; color: #666;">Street dogs are resilient, loyal, and full of gratitude. They simply need time to learn they are finally safe.</p>
+
+        <div class="grid">
+            <div class="card"><h3>🏥 Medical Care</h3><p>Complete vaccinations • Deworming • Spay/neuter • Dental check • Treatment for existing conditions</p></div>
+            <div class="card"><h3>⏳ Patience & Time</h3><p>Weeks to decompress • No forced interactions • Calm environment • Trust built gently</p></div>
+            <div class="card"><h3>🏡 Safe Space</h3><p>Quiet corner • Comfortable bed • Hiding spot • A place that is truly theirs</p></div>
+            <div class="card"><h3>🦺 Leash Training</h3><p>Well-fitted harness • Slow desensitization • Positive reinforcement • Never drag or pull</p></div>
+            <div class="card"><h3>🍽️ Food Security</h3><p>Feed in quiet spot • No disturbance while eating • Consistency builds trust</p></div>
+            <div class="card"><h3>❤️ Emotional Healing</h3><p>Understanding of fears • Gentle approach • No raised hands • Let them come to you</p></div>
+            <div class="card"><h3>🔒 Secure Home</h3><p>Safe boundaries • Microchip • ID tag • Always harnessed outside</p></div>
+        </div>
+
+        <div class="two-column">
+            <div>
+                <h3 style="color:#2c3e2f; margin-bottom:1rem;">What You Will Give</h3>
+                <ul>
+                    <li>Time — 3–6 months to settle and bond</li>
+                    <li>Patience — Progress comes in small steps</li>
+                    <li>Veterinary Care — Initial health check and ongoing care</li>
+                    <li>Safe Environment — Quiet space with no pressure</li>
+                    <li>Lifetime Commitment — Never to abandon again</li>
+                </ul>
+            </div>
+            <div>
+                <h3 style="color:#2c3e2f; margin-bottom:1rem;">What You Will Receive</h3>
+                <ul>
+                    <li>The first tail wag that tells you they trust you</li>
+                    <li>The day they choose to sit beside you</li>
+                    <li>A bond built on gratitude and loyalty</li>
+                    <li>A love like no other</li>
+                </ul>
+            </div>
+        </div>
+
+        <blockquote>"I see your scars. I understand your fear. And I will wait for you."</blockquote>
+
+        <div class="cta">
+            <h3>Are You Ready?</h3>
+            <p>If you can offer patience, compassion, and a safe place to land, a street dog will give you something no purebred ever could — the love of a survivor who chose to trust again.</p>
+            <a href="#" class="button">Ready to Adopt →</a>
+        </div>
+
+        <footer>
+            <p>Contact us to meet our adoptable street dogs and find your new best friend.</p>
+            <p>📧 adopt@streetdogrescue.org | 📞 +91 98765 43210</p>
+        </footer>
+    </div>
+</body>
+</html>
