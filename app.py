@@ -1146,8 +1146,14 @@ def admin_login():
         
         conn = get_db()
         cursor = conn.cursor()
-        # Use ? for SQLite compatibility
-        cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password = ?", (username, password))
+        
+        # SQLite uses ? , MySQL uses %s - but ? works for both with proper driver
+        # Let's use a try/except to handle both
+        try:
+            cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password = ?", (username, password))
+        except:
+            cursor.execute("SELECT user_id, role FROM users WHERE username = %s AND password = %s", (username, password))
+        
         user = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -1164,7 +1170,7 @@ def admin_login():
             </script>
             '''
     
-    return ''' [rest of your login HTML] '''
+    return '''
     <!DOCTYPE html>
     <html>
     <head>
@@ -1187,7 +1193,6 @@ def admin_login():
                 <input type="password" name="password" placeholder="Password" required>
                 <button type="submit" class="btn">Login</button>
             </form>
-            <!-- <p style="text-align: center; margin-top: 20px;">Demo: admin / admin123</p> -->
         </div>
     </body>
     </html>
