@@ -1,5 +1,5 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
-import mysql.connector
+import sqlite3
 from datetime import date, datetime
 import smtplib
 from email.mime.text import MIMEText
@@ -8,6 +8,7 @@ import secrets
 import uuid
 import os
 from werkzeug.utils import secure_filename
+import hashlib
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
@@ -27,14 +28,153 @@ EMAIL_PASSWORD = "avoq feqn shxs ilai"
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 
-# ==================== DATABASE CONNECTION ====================
+# ==================== DATABASE SETUP (AUTOMATIC) ====================
+DATABASE = 'street_dog_welfare.db'
+
 def get_db():
-    return mysql.connector.connect(
-        host='localhost',
-        user='root',
-        password='',
-        database='street_dog_welfare'
-    )
+    """Get database connection"""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Create all tables automatically if they don't exist"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Create users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT,
+            role TEXT,
+            email TEXT
+        )
+    ''')
+    
+    # Create dogs table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS dogs (
+            dog_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            location TEXT,
+            area TEXT,
+            age TEXT,
+            gender TEXT,
+            health_status TEXT,
+            vaccination INTEGER DEFAULT 0,
+            sterilized INTEGER DEFAULT 0,
+            personality TEXT,
+            food_type TEXT,
+            feeding_time TEXT,
+            special_needs TEXT,
+            image_path TEXT,
+            status TEXT DEFAULT 'Available',
+            created_date TEXT,
+            adopted_date TEXT
+        )
+    ''')
+    
+    # Create donors table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS donors (
+            donor_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            email TEXT,
+            phone TEXT,
+            city TEXT,
+            donation_date TEXT,
+            amount REAL
+        )
+    ''')
+    
+    # Create donations table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS donations (
+            donation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            donor_id INTEGER,
+            dog_id INTEGER,
+            amount REAL,
+            purpose TEXT,
+            donation_date TEXT,
+            status TEXT,
+            payment_id TEXT,
+            FOREIGN KEY (donor_id) REFERENCES donors(donor_id),
+            FOREIGN KEY (dog_id) REFERENCES dogs(dog_id)
+        )
+    ''')
+    
+    # Create volunteers table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS volunteers (
+            volunteer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            email TEXT,
+            phone TEXT,
+            availability TEXT,
+            skills TEXT,
+            joined_date TEXT
+        )
+    ''')
+    
+    # Create adoption requests table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS adoption_requests (
+            request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dog_id INTEGER,
+            full_name TEXT,
+            email TEXT,
+            phone TEXT,
+            address TEXT,
+            city TEXT,
+            home_type TEXT,
+            has_pets TEXT,
+            reason TEXT,
+            request_date TEXT,
+            status TEXT DEFAULT 'Pending',
+            review_notes TEXT,
+            reviewed_by INTEGER,
+            reviewed_date TEXT,
+            FOREIGN KEY (dog_id) REFERENCES dogs(dog_id),
+            FOREIGN KEY (reviewed_by) REFERENCES users(user_id)
+        )
+    ''')
+    
+    # Insert default admin user if not exists
+    cursor.execute("SELECT * FROM users WHERE username = 'admin'")
+    if not cursor.fetchone():
+        # Simple password hash (you can use a better method in production)
+        cursor.execute("""
+            INSERT INTO users (username, password, role, email)
+            VALUES ('admin', 'admin123', 'admin', 'admin@streetdogwelfare.org')
+        """)
+    
+    # Insert sample dogs if table is empty
+    cursor.execute("SELECT COUNT(*) FROM dogs")
+    if cursor.fetchone()[0] == 0:
+        sample_dogs = [
+            ('Max', 'MG Road, Bangalore', 'Central', 'Young', 'Male', 'Healthy', 1, 1, 'Friendly and playful', 'Dry Food', 'Morning', 'None', None, 'Available', str(date.today()), None),
+            ('Bella', 'Indiranagar, Bangalore', 'East', 'Adult', 'Female', 'Vaccinated', 1, 1, 'Gentle and calm', 'Wet Food', 'Evening', 'Needs daily walk', None, 'Available', str(date.today()), None),
+            ('Rocky', 'Koramangala, Bangalore', 'South', 'Puppy', 'Male', 'Healthy', 0, 0, 'Energetic and curious', 'Milk', 'Both', 'Puppy training needed', None, 'Available', str(date.today()), None),
+            ('Lucy', 'Whitefield, Bangalore', 'East', 'Senior', 'Female', 'Needs Care', 1, 1, 'Loves cuddles', 'Soft Food', 'Morning', 'Arthritis medication', None, 'Available', str(date.today()), None),
+            ('Charlie', 'Jayanagar, Bangalore', 'South', 'Adult', 'Male', 'Healthy', 1, 1, 'Good with kids', 'Dry Food', 'Evening', 'None', None, 'Available', str(date.today()), None)
+        ]
+        
+        for dog in sample_dogs:
+            cursor.execute('''
+                INSERT INTO dogs (name, location, area, age, gender, health_status, vaccination, 
+                sterilized, personality, food_type, feeding_time, special_needs, image_path, 
+                status, created_date, adopted_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', dog)
+    
+    conn.commit()
+    conn.close()
+    print("✅ Database initialized successfully!")
+
+# Initialize database when app starts
+init_db()
 
 # ==================== EMAIL FUNCTIONS ====================
 def send_email(to_email, subject, message):
@@ -119,6 +259,59 @@ def send_volunteer_email(name, email):
     </html>
     """
     return send_email(email, subject, message)
+
+def send_approval_email(name, email, dog_name):
+    """Send approval email to applicant"""
+    subject = f"🎉 Congratulations! Your Adoption Application for {dog_name} is Approved!"
+    
+    message = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
+            <h1 style="color: #27ae60;">🎉 Congratulations, {name}!</h1>
+            <p>Your adoption application for <strong>{dog_name}</strong> has been <strong style="color: #27ae60;">APPROVED</strong>!</p>
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+                <li>📞 Our team will contact you within 24 hours to schedule a meet-and-greet</li>
+                <li>🐕 You'll get to spend time with {dog_name} before finalizing adoption</li>
+                <li>📝 Adoption documents will be shared with you</li>
+                <li>🏠 A quick home visit will be arranged to ensure a safe environment</li>
+            </ul>
+            <p>Thank you for giving a street dog a forever home! 🐕❤️</p>
+            <br>
+            <p>Warm regards,<br><strong>Street Dog Welfare Trust</strong></p>
+            <p><small>Contact us: +91 80 1234 5678 | adopt@streetdogwelfare.org</small></p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    send_email(email, subject, message)
+
+def send_rejection_email(name, email, dog_name, reason):
+    """Send rejection email to applicant"""
+    subject = f"Update on Your Adoption Application for {dog_name}"
+    
+    reason_text = reason if reason else "We regret to inform you that your application could not be approved at this time."
+    
+    message = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
+            <h1 style="color: #e74c3c;">Update on Your Application</h1>
+            <p>Dear {name},</p>
+            <p>Thank you for your interest in adopting <strong>{dog_name}</strong>. After careful review, we regret to inform you that your application could not be approved at this time.</p>
+            <p><strong>Reason:</strong> {reason_text}</p>
+            <p>We encourage you to look at other wonderful dogs available for adoption on our website. Each dog is special and waiting for a loving home!</p>
+            <p><a href="http://localhost:5000/dogs" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Available Dogs</a></p>
+            <br>
+            <p>Thank you for your understanding,<br><strong>Street Dog Welfare Trust</strong></p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    send_email(email, subject, message)
 
 # ==================== HOMEPAGE ====================
 @app.route('/')
@@ -234,12 +427,12 @@ def index():
     '''
     
     for dog in recent_dogs:
-        dog_id = dog[0]
-        dog_name = dog[1]
-        dog_location = dog[2]
-        dog_age = dog[3]
-        dog_health = dog[4]
-        image_path = dog[5] if dog[5] else 'static/images/default_dog.jpg'
+        dog_id = dog['dog_id']
+        dog_name = dog['name']
+        dog_location = dog['location']
+        dog_age = dog['age']
+        dog_health = dog['health_status']
+        image_path = dog['image_path'] if dog['image_path'] else 'static/images/default_dog.jpg'
         
         html += f'''
                 <div class="dog-card">
@@ -313,18 +506,18 @@ def dogs():
     '''
     
     for dog in all_dogs:
-        image_path = dog[6] if dog[6] else 'static/images/default_dog.jpg'
+        image_path = dog['image_path'] if dog['image_path'] else 'static/images/default_dog.jpg'
         html += f'''
         <div class="dog-card">
             <div class="dog-image" style="background-image: url('/{image_path}');"></div>
             <div class="dog-info">
-                <h3>{dog[1]}</h3>
-                <p>📍 {dog[2]}</p>
-                <p>🎂 {dog[3]}</p>
-                <p><span class="badge">{dog[4]}</span></p>
+                <h3>{dog['name']}</h3>
+                <p>📍 {dog['location']}</p>
+                <p>🎂 {dog['age']}</p>
+                <p><span class="badge">{dog['health_status']}</span></p>
                 <div class="dog-actions">
-                    <a href="/dog/{dog[0]}" class="btn">View Details</a>
-                    <a href="/adopt/{dog[0]}" class="btn">Adopt</a>
+                    <a href="/dog/{dog['dog_id']}" class="btn">View Details</a>
+                    <a href="/adopt/{dog['dog_id']}" class="btn">Adopt</a>
                 </div>
             </div>
         </div>
@@ -343,7 +536,7 @@ def dogs():
 def dog_detail(dog_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM dogs WHERE dog_id = %s", (dog_id,))
+    cursor.execute("SELECT * FROM dogs WHERE dog_id = ?", (dog_id,))
     dog = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -351,18 +544,13 @@ def dog_detail(dog_id):
     if not dog:
         return "<h1>Dog not found</h1><a href='/'>Go Home</a>"
     
-    # Column indices based on your table structure
-    # 0:dog_id, 1:name, 2:location, 3:area, 4:age, 5:gender, 6:health_status, 
-    # 7:vaccination, 8:sterilized, 9:personality, 10:food_type, 11:feeding_time, 
-    # 12:special_needs, 13:image_path, 14:status, 15:created_date
-    
-    image_path = dog[13] if dog[13] else 'static/images/default_dog.jpg'
+    image_path = dog['image_path'] if dog['image_path'] else 'static/images/default_dog.jpg'
     
     html = f'''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{dog[1]} - Street Dog Welfare</title>
+    <title>{dog['name']} - Street Dog Welfare</title>
     <style>
         body {{ font-family: 'Segoe UI', Arial; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin: 0; padding: 20px; }}
         .container {{ max-width: 800px; margin: auto; background: white; border-radius: 20px; padding: 30px; }}
@@ -388,24 +576,24 @@ def dog_detail(dog_id):
 <div class="container">
     <a href="/dogs" class="btn">← Back to Dogs</a>
     <div class="dog-image"></div>
-    <h1>{dog[1]}</h1>
+    <h1>{dog['name']}</h1>
     <div class="info">
-        <p><span class="label">📍 Location:</span> {dog[2] if dog[2] else 'Not specified'}</p>
-        <p><span class="label">📍 Area:</span> {dog[3] if dog[3] else 'Not specified'}</p>
-        <p><span class="label">🎂 Age:</span> {dog[4] if dog[4] else 'Unknown'}</p>
-        <p><span class="label">⚥ Gender:</span> {dog[5] if dog[5] else 'Unknown'}</p>
-        <p><span class="label">💊 Health:</span> {dog[6] if dog[6] else 'Unknown'}</p>
-        <p><span class="label">💉 Vaccination:</span> {'✅ Yes' if dog[7] else '❌ No'}</p>
-        <p><span class="label">✂️ Sterilized:</span> {'✅ Yes' if dog[8] else '❌ No'}</p>
-        <p><span class="label">🍖 Food Type:</span> {dog[10] if dog[10] else 'Not specified'}</p>
-        <p><span class="label">⏰ Feeding Time:</span> {dog[11] if dog[11] else 'Not specified'}</p>
-        <p><span class="label">📝 Special Needs:</span> {dog[12] if dog[12] else 'None'}</p>
-        <p><span class="label">📅 Registered:</span> {dog[15] if dog[15] else 'Unknown'}</p>
-        <p><span class="label">🏷️ Status:</span> <strong style="color: {'#27ae60' if dog[14] == 'Available' else '#f39c12'}">{dog[14]}</strong></p>
+        <p><span class="label">📍 Location:</span> {dog['location'] if dog['location'] else 'Not specified'}</p>
+        <p><span class="label">📍 Area:</span> {dog['area'] if dog['area'] else 'Not specified'}</p>
+        <p><span class="label">🎂 Age:</span> {dog['age'] if dog['age'] else 'Unknown'}</p>
+        <p><span class="label">⚥ Gender:</span> {dog['gender'] if dog['gender'] else 'Unknown'}</p>
+        <p><span class="label">💊 Health:</span> {dog['health_status'] if dog['health_status'] else 'Unknown'}</p>
+        <p><span class="label">💉 Vaccination:</span> {'✅ Yes' if dog['vaccination'] else '❌ No'}</p>
+        <p><span class="label">✂️ Sterilized:</span> {'✅ Yes' if dog['sterilized'] else '❌ No'}</p>
+        <p><span class="label">🍖 Food Type:</span> {dog['food_type'] if dog['food_type'] else 'Not specified'}</p>
+        <p><span class="label">⏰ Feeding Time:</span> {dog['feeding_time'] if dog['feeding_time'] else 'Not specified'}</p>
+        <p><span class="label">📝 Special Needs:</span> {dog['special_needs'] if dog['special_needs'] else 'None'}</p>
+        <p><span class="label">📅 Registered:</span> {dog['created_date'] if dog['created_date'] else 'Unknown'}</p>
+        <p><span class="label">🏷️ Status:</span> <strong style="color: {'#27ae60' if dog['status'] == 'Available' else '#f39c12'}">{dog['status']}</strong></p>
     </div>
     <div style="text-align: center;">
-        <a href="/adopt/{dog[0]}" class="btn">🏠 Adopt {dog[1]}</a>
-        <a href="/donate?dog_id={dog[0]}" class="btn">💰 Donate for {dog[1]}</a>
+        <a href="/adopt/{dog['dog_id']}" class="btn">🏠 Adopt {dog['name']}</a>
+        <a href="/donate?dog_id={dog['dog_id']}" class="btn">💰 Donate for {dog['name']}</a>
     </div>
 </div>
 </body>
@@ -422,10 +610,10 @@ def donate():
     if dog_id:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM dogs WHERE dog_id = %s", (dog_id,))
+        cursor.execute("SELECT name FROM dogs WHERE dog_id = ?", (dog_id,))
         dog = cursor.fetchone()
         if dog:
-            dog_name = dog[0]
+            dog_name = dog['name']
         cursor.close()
         conn.close()
     
@@ -445,15 +633,15 @@ def donate():
         
         cursor.execute("""
             INSERT INTO donors (name, email, phone, city, donation_date, amount)
-            VALUES (%s, %s, %s, %s, CURDATE(), %s)
-        """, (name, email, phone, city, amount))
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, email, phone, city, str(date.today()), amount))
         donor_id = cursor.lastrowid
         
         dog_id_val = int(dog_id) if dog_id and dog_id != '' else None
         cursor.execute("""
             INSERT INTO donations (donor_id, dog_id, amount, purpose, donation_date, status, payment_id)
-            VALUES (%s, %s, %s, %s, CURDATE(), 'Completed', %s)
-        """, (donor_id, dog_id_val, amount, purpose, transaction_id))
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (donor_id, dog_id_val, amount, purpose, str(date.today()), 'Completed', transaction_id))
         
         conn.commit()
         
@@ -558,10 +746,10 @@ def adopt(dog_id=None):
     dog_id_value = None
     
     if dog_id and dog_id != 'None':
-        cursor.execute("SELECT name FROM dogs WHERE dog_id = %s", (dog_id,))
+        cursor.execute("SELECT name FROM dogs WHERE dog_id = ?", (dog_id,))
         dog = cursor.fetchone()
         if dog:
-            dog_name = dog[0]
+            dog_name = dog['name']
             dog_id_value = dog_id
     
     cursor.close()
@@ -665,25 +853,25 @@ def adopt_submit():
     dog_name = "a dog"
     
     if dog_id and dog_id.strip():
-        cursor.execute("SELECT name FROM dogs WHERE dog_id = %s", (dog_id,))
+        cursor.execute("SELECT name FROM dogs WHERE dog_id = ?", (dog_id,))
         dog = cursor.fetchone()
         if dog:
-            dog_name = dog[0]
+            dog_name = dog['name']
             cursor.execute("""
                 INSERT INTO adoption_requests (dog_id, full_name, email, phone, address, city, home_type, has_pets, reason, request_date, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURDATE(), 'Pending')
-            """, (dog_id, full_name, email, phone, address, city, home_type, has_pets, reason))
-            cursor.execute("UPDATE dogs SET status = 'Pending Adoption' WHERE dog_id = %s", (dog_id,))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (dog_id, full_name, email, phone, address, city, home_type, has_pets, reason, str(date.today()), 'Pending'))
+            cursor.execute("UPDATE dogs SET status = 'Pending Adoption' WHERE dog_id = ?", (dog_id,))
         else:
             cursor.execute("""
                 INSERT INTO adoption_requests (dog_id, full_name, email, phone, address, city, home_type, has_pets, reason, request_date, status)
-                VALUES (NULL, %s, %s, %s, %s, %s, %s, %s, %s, CURDATE(), 'Pending')
-            """, (full_name, email, phone, address, city, home_type, has_pets, reason))
+                VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (full_name, email, phone, address, city, home_type, has_pets, reason, str(date.today()), 'Pending'))
     else:
         cursor.execute("""
             INSERT INTO adoption_requests (dog_id, full_name, email, phone, address, city, home_type, has_pets, reason, request_date, status)
-            VALUES (NULL, %s, %s, %s, %s, %s, %s, %s, %s, CURDATE(), 'Pending')
-        """, (full_name, email, phone, address, city, home_type, has_pets, reason))
+            VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (full_name, email, phone, address, city, home_type, has_pets, reason, str(date.today()), 'Pending'))
     
     conn.commit()
     cursor.close()
@@ -732,8 +920,8 @@ def volunteer():
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO volunteers (name, email, phone, availability, skills, joined_date)
-            VALUES (%s, %s, %s, %s, %s, CURDATE())
-        """, (name, email, phone, availability, skills))
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (name, email, phone, availability, skills, str(date.today())))
         conn.commit()
         cursor.close()
         conn.close()
@@ -840,8 +1028,8 @@ def register_dog():
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO dogs (name, location, area, age, gender, health_status, food_type, feeding_time, special_needs, image_path, status, created_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Available', CURDATE())
-        """, (name, location, area, age, gender, health_status, food_type, feeding_time, special_needs, image_path))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, location, area, age, gender, health_status, food_type, feeding_time, special_needs, image_path, 'Available', str(date.today())))
         conn.commit()
         cursor.close()
         conn.close()
@@ -971,14 +1159,14 @@ def admin_login():
         
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, role FROM users WHERE username = %s AND password = %s", (username, password))
+        cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password = ?", (username, password))
         user = cursor.fetchone()
         cursor.close()
         conn.close()
         
-        if user and user[1] == 'admin':
+        if user and user['role'] == 'admin':
             session['admin_logged_in'] = True
-            session['admin_id'] = user[0]
+            session['admin_id'] = user['user_id']
             return redirect(url_for('admin_dashboard'))
         else:
             return '''
@@ -1011,7 +1199,7 @@ def admin_login():
                 <input type="password" name="password" placeholder="Password" required>
                 <button type="submit" class="btn">Login</button>
             </form>
-            <!-- <p style="text-align: center; margin-top: 20px;">Demo: admin / admin123</p> -->
+            <p style="text-align: center; margin-top: 20px;">Demo: admin / admin123</p>
         </div>
     </body>
     </html>
@@ -1097,27 +1285,40 @@ def admin_dashboard():
             
             <h2>Recent Dogs</h2>
             <table>
-                <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Health</th><th>Status</th><th>Actions</th></tr>
+                <thead>
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Location</th>
+                        <th>Health</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
     '''
     
     for dog in recent_dogs:
-        image_html = f'<img class="dog-image" src="/{dog[4]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog[4] else 'No Image'
+        image_html = f'<img class="dog-image" src="/{dog["image_path"]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog["image_path"] else 'No Image'
         html += f'''
-                <tr>
-                    <td>{dog[0]}</td>
-                    <td>{image_html}</td>
-                    <td>{dog[1]}</td>
-                    <td>{dog[2]}</td>
-                    <td>{dog[3]}</td>
-                    <td>{dog[5]}</td>
-                    <td>
-                        <a href="/admin/edit_dog/{dog[0]}" class="btn">Edit</a>
-                        <a href="/admin/delete_dog/{dog[0]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
-                    </td>
-                </tr>
+                    <tr>
+                        <td>{dog["dog_id"]}</td>
+                        <td>{image_html}</td>
+                        <td>{dog["name"]}</td>
+                        <td>{dog["location"]}</td>
+                        <td>{dog["health_status"]}</td>
+                        <td>{dog["status"]}</td>
+                        <td>
+                            <a href="/admin/edit_dog/{dog["dog_id"]}" class="btn">Edit</a>
+                            <a href="/admin/delete_dog/{dog["dog_id"]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
+                        </td>
+                    </tr>
         '''
     
     html += '''
+                </tbody>
             </table>
         </div>
     </body>
@@ -1173,29 +1374,43 @@ def admin_dogs():
             <h1>🐕 Manage Dogs</h1>
             <a href="/admin/add_dog" class="btn" style="margin-bottom: 20px;">➕ Add New Dog</a>
             <table>
-                <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Age</th><th>Gender</th><th>Health</th><th>Status</th><th>Actions</th></tr>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Location</th>
+                        <th>Age</th>
+                        <th>Gender</th>
+                        <th>Health</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
     '''
     
     for dog in dogs:
-        image_html = f'<img class="dog-image" src="/{dog[7]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog[7] else 'No Image'
+        image_html = f'<img class="dog-image" src="/{dog["image_path"]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog["image_path"] else 'No Image'
         html += f'''
-                <tr>
-                    <td>{dog[0]}</td>
-                    <td>{image_html}</td>
-                    <td>{dog[1]}</td>
-                    <td>{dog[2]}</td>
-                    <td>{dog[3]}</td>
-                    <td>{dog[4]}</td>
-                    <td>{dog[5]}</td>
-                    <td>{dog[6]}</td>
-                    <td>
-                        <a href="/admin/edit_dog/{dog[0]}" class="btn">Edit</a>
-                        <a href="/admin/delete_dog/{dog[0]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
-                    </td>
-                </tr>
+                    <tr>
+                        <td>{dog["dog_id"]}</td>
+                        <td>{image_html}</td>
+                        <td>{dog["name"]}</td>
+                        <td>{dog["location"]}</td>
+                        <td>{dog["age"]}</td>
+                        <td>{dog["gender"]}</td>
+                        <td>{dog["health_status"]}</td>
+                        <td>{dog["status"]}</td>
+                        <td>
+                            <a href="/admin/edit_dog/{dog["dog_id"]}" class="btn">Edit</a>
+                            <a href="/admin/delete_dog/{dog["dog_id"]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
+                        </td>
+                    </tr>
         '''
     
     html += '''
+                </tbody>
             </table>
         </div>
     </body>
@@ -1239,8 +1454,8 @@ def admin_add_dog():
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO dogs (name, location, area, age, gender, health_status, vaccination, sterilized, personality, food_type, feeding_time, special_needs, image_path, status, created_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURDATE())
-        """, (name, location, area, age, gender, health_status, vaccination, sterilized, personality, food_type, feeding_time, special_needs, image_path, status))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (name, location, area, age, gender, health_status, vaccination, sterilized, personality, food_type, feeding_time, special_needs, image_path, status, str(date.today())))
         conn.commit()
         cursor.close()
         conn.close()
@@ -1366,12 +1581,12 @@ def admin_edit_dog(dog_id):
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
                 image_path = f"{app.config['UPLOAD_FOLDER']}/{filename}"
                 
-                cursor.execute("UPDATE dogs SET image_path = %s WHERE dog_id = %s", (image_path, dog_id))
+                cursor.execute("UPDATE dogs SET image_path = ? WHERE dog_id = ?", (image_path, dog_id))
         
         cursor.execute("""
-            UPDATE dogs SET name=%s, location=%s, area=%s, age=%s, gender=%s, health_status=%s, 
-            vaccination=%s, sterilized=%s, personality=%s, food_type=%s, feeding_time=%s, 
-            special_needs=%s, status=%s WHERE dog_id=%s
+            UPDATE dogs SET name=?, location=?, area=?, age=?, gender=?, health_status=?, 
+            vaccination=?, sterilized=?, personality=?, food_type=?, feeding_time=?, 
+            special_needs=?, status=? WHERE dog_id=?
         """, (name, location, area, age, gender, health_status, vaccination, sterilized, personality, food_type, feeding_time, special_needs, status, dog_id))
         conn.commit()
         cursor.close()
@@ -1379,7 +1594,7 @@ def admin_edit_dog(dog_id):
         
         return '<script>alert("Dog updated successfully!"); window.location.href="/admin/dogs";</script>'
     
-    cursor.execute("SELECT * FROM dogs WHERE dog_id = %s", (dog_id,))
+    cursor.execute("SELECT * FROM dogs WHERE dog_id = ?", (dog_id,))
     dog = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -1419,39 +1634,39 @@ def admin_edit_dog(dog_id):
         
         <div class="content">
             <div class="form-container">
-                <h1>✏️ Edit Dog: {dog[1]}</h1>
+                <h1>✏️ Edit Dog: {dog['name']}</h1>
                 <form method="POST" enctype="multipart/form-data">
                     <div class="form-row">
-                        <div><label>Name *</label><input type="text" name="name" value="{dog[1]}" required></div>
-                        <div><label>Location *</label><input type="text" name="location" value="{dog[2]}" required></div>
+                        <div><label>Name *</label><input type="text" name="name" value="{dog['name']}" required></div>
+                        <div><label>Location *</label><input type="text" name="location" value="{dog['location']}" required></div>
                     </div>
                     <div class="form-row">
-                        <div><label>Area</label><input type="text" name="area" value="{dog[3] if dog[3] else ''}"></div>
-                        <div><label>Age</label><input type="text" name="age" value="{dog[4] if dog[4] else ''}"></div>
+                        <div><label>Area</label><input type="text" name="area" value="{dog['area'] if dog['area'] else ''}"></div>
+                        <div><label>Age</label><input type="text" name="age" value="{dog['age'] if dog['age'] else ''}"></div>
                     </div>
                     <div class="form-row">
                         <div><label>Gender</label>
-                            <select name="gender"><option {dog[5] == 'Male' and 'selected' or ''}>Male</option><option {dog[5] == 'Female' and 'selected' or ''}>Female</option></select>
+                            <select name="gender"><option {dog['gender'] == 'Male' and 'selected' or ''}>Male</option><option {dog['gender'] == 'Female' and 'selected' or ''}>Female</option></select>
                         </div>
                         <div><label>Health Status</label>
-                            <select name="health_status"><option {dog[6] == 'Healthy' and 'selected' or ''}>Healthy</option><option {dog[6] == 'Injured' and 'selected' or ''}>Injured</option><option {dog[6] == 'Sick' and 'selected' or ''}>Sick</option></select>
+                            <select name="health_status"><option {dog['health_status'] == 'Healthy' and 'selected' or ''}>Healthy</option><option {dog['health_status'] == 'Injured' and 'selected' or ''}>Injured</option><option {dog['health_status'] == 'Sick' and 'selected' or ''}>Sick</option></select>
                         </div>
                     </div>
                     <div class="form-row">
-                        <div><label>Food Type</label><input type="text" name="food_type" value="{dog[10] if dog[10] else ''}"></div>
-                        <div><label>Feeding Time</label><input type="text" name="feeding_time" value="{dog[11] if dog[11] else ''}"></div>
+                        <div><label>Food Type</label><input type="text" name="food_type" value="{dog['food_type'] if dog['food_type'] else ''}"></div>
+                        <div><label>Feeding Time</label><input type="text" name="feeding_time" value="{dog['feeding_time'] if dog['feeding_time'] else ''}"></div>
                     </div>
                     <div class="form-row">
-                        <div><label><input type="checkbox" name="vaccination" {'checked' if dog[7] else ''}> Vaccinated</label></div>
-                        <div><label><input type="checkbox" name="sterilized" {'checked' if dog[8] else ''}> Sterilized</label></div>
+                        <div><label><input type="checkbox" name="vaccination" {'checked' if dog['vaccination'] else ''}> Vaccinated</label></div>
+                        <div><label><input type="checkbox" name="sterilized" {'checked' if dog['sterilized'] else ''}> Sterilized</label></div>
                     </div>
-                    <div><label>Personality</label><textarea name="personality" rows="2">{dog[9] if dog[9] else ''}</textarea></div>
-                    <div><label>Special Needs</label><textarea name="special_needs" rows="2">{dog[12] if dog[12] else ''}</textarea></div>
+                    <div><label>Personality</label><textarea name="personality" rows="2">{dog['personality'] if dog['personality'] else ''}</textarea></div>
+                    <div><label>Special Needs</label><textarea name="special_needs" rows="2">{dog['special_needs'] if dog['special_needs'] else ''}</textarea></div>
                     <div><label>Status</label>
-                        <select name="status"><option {dog[14] == 'Available' and 'selected' or ''}>Available</option><option {dog[14] == 'Pending Adoption' and 'selected' or ''}>Pending Adoption</option><option {dog[14] == 'Adopted' and 'selected' or ''}>Adopted</option></select>
+                        <select name="status"><option {dog['status'] == 'Available' and 'selected' or ''}>Available</option><option {dog['status'] == 'Pending Adoption' and 'selected' or ''}>Pending Adoption</option><option {dog['status'] == 'Adopted' and 'selected' or ''}>Adopted</option></select>
                     </div>
                     <div><label>Current Photo</label><br>
-                        {'<img class="current-image" src="/' + dog[13] + '">' if dog[13] else 'No image'}
+                        {'<img class="current-image" src="/' + dog['image_path'] + '">' if dog['image_path'] else 'No image'}
                     </div>
                     <div><label>Upload New Photo</label><input type="file" name="image" accept="image/*"></div>
                     <button type="submit" class="btn">💾 Save Changes</button>
@@ -1472,7 +1687,7 @@ def admin_delete_dog(dog_id):
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM dogs WHERE dog_id = %s", (dog_id,))
+    cursor.execute("DELETE FROM dogs WHERE dog_id = ?", (dog_id,))
     conn.commit()
     cursor.close()
     conn.close()
@@ -1513,7 +1728,7 @@ def admin_applications():
                    r.review_notes, d.name as dog_name, r.dog_id
             FROM adoption_requests r
             LEFT JOIN dogs d ON r.dog_id = d.dog_id
-            WHERE r.status = %s
+            WHERE r.status = ?
             ORDER BY r.request_date DESC
         """, (status_filter,))
     
@@ -1610,20 +1825,20 @@ def admin_applications():
     '''
     
     for app in applications:
-        request_id = app[0]
-        full_name = app[1]
-        email = app[2]
-        phone = app[3]
-        address = app[4] if app[4] else ''
-        city = app[5] if app[5] else ''
-        home_type = app[6] if app[6] else ''
-        has_pets = app[7] if app[7] else ''
-        reason = app[8] if app[8] else ''
-        request_date = app[9]
-        status = app[10]
-        review_notes = app[11] if app[11] else ''
-        dog_name = app[12] if app[12] else 'General'
-        dog_id = app[13]
+        request_id = app['request_id']
+        full_name = app['full_name']
+        email = app['email']
+        phone = app['phone']
+        address = app['address'] if app['address'] else ''
+        city = app['city'] if app['city'] else ''
+        home_type = app['home_type'] if app['home_type'] else ''
+        has_pets = app['has_pets'] if app['has_pets'] else ''
+        reason = app['reason'] if app['reason'] else ''
+        request_date = app['request_date']
+        status = app['status']
+        review_notes = app['review_notes'] if app['review_notes'] else ''
+        dog_name = app['dog_name'] if app['dog_name'] else 'General'
+        dog_id = app['dog_id']
         
         status_class = f"status-{status.lower()}"
         
@@ -1647,8 +1862,8 @@ def admin_applications():
                                 <button type="submit" class="btn btn-approve" onclick="return confirmApprove()">✅ Approve</button>
                             </form>
                             <button onclick="showRejectModal({request_id})" class="btn btn-reject">❌ Reject</button>
-                    </td>
-                </tr>
+                        </td>
+                    </tr>
                 
                 <!-- Reject Modal -->
                 <div id="rejectModal_{request_id}" class="modal">
@@ -1749,33 +1964,33 @@ def admin_approve_application(request_id):
             SELECT r.full_name, r.email, d.name as dog_name, r.dog_id
             FROM adoption_requests r
             LEFT JOIN dogs d ON r.dog_id = d.dog_id
-            WHERE r.request_id = %s
+            WHERE r.request_id = ?
         """, (request_id,))
         application = cursor.fetchone()
         
         if application:
-            full_name = application[0]
-            email = application[1]
-            dog_name = application[2] if application[2] else "a dog"
-            dog_id = application[3]
+            full_name = application['full_name']
+            email = application['email']
+            dog_name = application['dog_name'] if application['dog_name'] else "a dog"
+            dog_id = application['dog_id']
             
             # Update application status
             cursor.execute("""
                 UPDATE adoption_requests 
                 SET status = 'Approved', 
-                    reviewed_by = %s, 
-                    reviewed_date = NOW()
-                WHERE request_id = %s
-            """, (session.get('admin_id'), request_id))
+                    reviewed_by = ?, 
+                    reviewed_date = ?
+                WHERE request_id = ?
+            """, (session.get('admin_id'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), request_id))
             
             # Update dog status if this was for a specific dog
             if dog_id:
                 cursor.execute("""
                     UPDATE dogs 
                     SET status = 'Adopted', 
-                        adopted_date = CURDATE() 
-                    WHERE dog_id = %s
-                """, (dog_id,))
+                        adopted_date = ? 
+                    WHERE dog_id = ?
+                """, (str(date.today()), dog_id))
             
             conn.commit()
             
@@ -1810,32 +2025,32 @@ def admin_reject_application(request_id):
             SELECT r.full_name, r.email, d.name as dog_name, r.dog_id
             FROM adoption_requests r
             LEFT JOIN dogs d ON r.dog_id = d.dog_id
-            WHERE r.request_id = %s
+            WHERE r.request_id = ?
         """, (request_id,))
         application = cursor.fetchone()
         
         if application:
-            full_name = application[0]
-            email = application[1]
-            dog_name = application[2] if application[2] else "a dog"
-            dog_id = application[3]
+            full_name = application['full_name']
+            email = application['email']
+            dog_name = application['dog_name'] if application['dog_name'] else "a dog"
+            dog_id = application['dog_id']
             
             # Update application status
             cursor.execute("""
                 UPDATE adoption_requests 
                 SET status = 'Rejected', 
-                    review_notes = %s,
-                    reviewed_by = %s, 
-                    reviewed_date = NOW()
-                WHERE request_id = %s
-            """, (review_notes, session.get('admin_id'), request_id))
+                    review_notes = ?,
+                    reviewed_by = ?, 
+                    reviewed_date = ?
+                WHERE request_id = ?
+            """, (review_notes, session.get('admin_id'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), request_id))
             
             # Make dog available again if it was pending adoption
             if dog_id:
                 cursor.execute("""
                     UPDATE dogs 
                     SET status = 'Available' 
-                    WHERE dog_id = %s AND status = 'Pending Adoption'
+                    WHERE dog_id = ? AND status = 'Pending Adoption'
                 """, (dog_id,))
             
             conn.commit()
@@ -1854,150 +2069,30 @@ def admin_reject_application(request_id):
     
     return redirect(url_for('admin_applications', status='Pending'))
 
-# ==================== EMAIL FUNCTIONS FOR ADOPTION ====================
-def send_approval_email(name, email, dog_name):
-    """Send approval email to applicant"""
-    subject = f"🎉 Congratulations! Your Adoption Application for {dog_name} is Approved!"
-    
-    message = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif;">
-        <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
-            <h1 style="color: #27ae60;">🎉 Congratulations, {name}!</h1>
-            <p>Your adoption application for <strong>{dog_name}</strong> has been <strong style="color: #27ae60;">APPROVED</strong>!</p>
-            <p><strong>Next Steps:</strong></p>
-            <ul>
-                <li>📞 Our team will contact you within 24 hours to schedule a meet-and-greet</li>
-                <li>🐕 You'll get to spend time with {dog_name} before finalizing adoption</li>
-                <li>📝 Adoption documents will be shared with you</li>
-                <li>🏠 A quick home visit will be arranged to ensure a safe environment</li>
-            </ul>
-            <p>Thank you for giving a street dog a forever home! 🐕❤️</p>
-            <br>
-            <p>Warm regards,<br><strong>Street Dog Welfare Trust</strong></p>
-            <p><small>Contact us: +91 80 1234 5678 | adopt@streetdogwelfare.org</small></p>
-        </div>
-    </body>
-    </html>
-    """
-    
-    send_email(email, subject, message)
-
-def send_rejection_email(name, email, dog_name, reason):
-    """Send rejection email to applicant"""
-    subject = f"Update on Your Adoption Application for {dog_name}"
-    
-    reason_text = reason if reason else "We regret to inform you that your application could not be approved at this time."
-    
-    message = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif;">
-        <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
-            <h1 style="color: #e74c3c;">Update on Your Application</h1>
-            <p>Dear {name},</p>
-            <p>Thank you for your interest in adopting <strong>{dog_name}</strong>. After careful review, we regret to inform you that your application could not be approved at this time.</p>
-            <p><strong>Reason:</strong> {reason_text}</p>
-            <p>We encourage you to look at other wonderful dogs available for adoption on our website. Each dog is special and waiting for a loving home!</p>
-            <p><a href="http://localhost:5000/dogs" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Available Dogs</a></p>
-            <br>
-            <p>Thank you for your understanding,<br><strong>Street Dog Welfare Trust</strong></p>
-        </div>
-    </body>
-    </html>
-    """
-    
-    send_email(email, subject, message)
-
-# ==================== SEND ADOPTION STATUS EMAIL ====================
-def send_adoption_status_email(name, email, dog_name, status, notes):
-    if status == 'Approved':
-        subject = f"🎉 Congratulations! Your Adoption Application for {dog_name} is Approved!"
-        message = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif;">
-            <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
-                <h1 style="color: #27ae60;">🎉 Congratulations, {name}!</h1>
-                <p>Your adoption application for <strong>{dog_name}</strong> has been <strong style="color: #27ae60;">APPROVED</strong>!</p>
-                <p><strong>Next Steps:</strong></p>
-                <ul>
-                    <li>Our team will contact you within 24 hours to schedule a meet-and-greet</li>
-                    <li>You'll get to spend time with {dog_name} before finalizing adoption</li>
-                    <li>Adoption documents will be shared with you</li>
-                </ul>
-                <p>Thank you for giving a street dog a forever home! 🐕</p>
-                <br>
-                <p>Warm regards,<br><strong>Street Dog Welfare Trust</strong></p>
-            </div>
-        </body>
-        </html>
-        """
-    elif status == 'Rejected':
-        subject = f"Update on Your Adoption Application for {dog_name}"
-        message = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif;">
-            <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
-                <h1 style="color: #e74c3c;">Update on Your Application</h1>
-                <p>Dear {name},</p>
-                <p>Thank you for your interest in adopting <strong>{dog_name}</strong>. After careful review, we regret to inform you that your application could not be approved at this time.</p>
-                <p><strong>Reason:</strong> {notes if notes else 'Application did not meet our adoption criteria'}</p>
-                <p>We encourage you to look at other wonderful dogs available for adoption on our website. Each dog is special and waiting for a loving home!</p>
-                <br>
-                <p>Thank you for your understanding,<br><strong>Street Dog Welfare Trust</strong></p>
-            </div>
-        </body>
-        </html>
-        """
-    else:
-        return
-    
-    send_email(email, subject, message)
-
-# ==================== ADMIN - BULK UPDATE ADOPTIONS ====================
-@app.route('/admin/bulk_update_applications', methods=['POST'])
-def admin_bulk_update_applications():
-    if not session.get('admin_logged_in'):
-        return redirect(url_for('admin_login'))
-    
-    action = request.form.get('action')
-    application_ids = request.form.getlist('application_ids')
-    
-    if application_ids:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        if action == 'approve':
-            status = 'Approved'
-        elif action == 'reject':
-            status = 'Rejected'
-        else:
-            return redirect(url_for('admin_applications'))
-        
-        for app_id in application_ids:
-            cursor.execute("""
-                UPDATE adoption_requests 
-                SET status = %s, reviewed_by = %s, reviewed_date = NOW()
-                WHERE request_id = %s
-            """, (status, session.get('admin_id'), app_id))
-            
-            # Get dog_id to update dog status
-            cursor.execute("SELECT dog_id FROM adoption_requests WHERE request_id = %s", (app_id,))
-            dog = cursor.fetchone()
-            if dog and dog[0]:
-                if status == 'Approved':
-                    cursor.execute("UPDATE dogs SET status = 'Adopted', adopted_date = CURDATE() WHERE dog_id = %s", (dog[0],))
-                elif status == 'Rejected':
-                    cursor.execute("UPDATE dogs SET status = 'Available' WHERE dog_id = %s AND status = 'Pending Adoption'", (dog[0],))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-    
-    return redirect(url_for('admin_applications'))
+# ==================== ADMIN LOGOUT ====================
+@app.route('/admin/logout')
+def admin_logout():
+    session.clear()
+    return redirect(url_for('admin_login'))
 
 # ==================== RUN APP ====================
 if __name__ == '__main__':
     # Create necessary folders
     os.makedirs('static/images', exist_ok=True)
     os.makedirs('static/uploads', exist_ok=True)
+    
+    # Create a default dog image if it doesn't exist
+    default_image_path = 'static/images/default_dog.jpg'
+    if not os.path.exists(default_image_path):
+        # Create a simple placeholder image using HTML/CSS or just leave it
+        print("ℹ️ Note: Default dog image not found. The app will show 'No Image' for dogs without photos.")
+    
+    print("=" * 50)
+    print("🐕 Street Dog Welfare Management System")
+    print("=" * 50)
+    print("✅ Database: SQLite (street_dog_welfare.db)")
+    print("✅ Admin Login: admin / admin123")
+    print("✅ Server: http://localhost:5000")
+    print("=" * 50)
+    
     app.run(debug=True, host='0.0.0.0', port=5000)
