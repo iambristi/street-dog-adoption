@@ -1661,6 +1661,7 @@ def admin_delete_dog(dog_id):
     return '<script>alert("Dog deleted successfully!"); window.location.href="/admin/dogs";</script>'
 
 # Admin - View adoption applications
+# Admin - View adoption applications
 @app.route('/admin/applications')
 def admin_applications():
     if not session.get('admin_logged_in'):
@@ -1672,6 +1673,7 @@ def admin_applications():
     conn = get_db()
     cursor = conn.cursor()
     
+    # Use ? for SQLite compatibility
     if status_filter == 'All':
         cursor.execute("""
             SELECT r.request_id, r.full_name, r.email, r.phone, r.address, r.city, 
@@ -1694,13 +1696,13 @@ def admin_applications():
                    r.review_notes, d.name as dog_name, r.dog_id
             FROM adoption_requests r
             LEFT JOIN dogs d ON r.dog_id = d.dog_id
-            WHERE r.status = %s
+            WHERE r.status = ?
             ORDER BY r.request_date DESC
         """, (status_filter,))
     
     applications = cursor.fetchall()
     
-    # Get counts for tabs
+    # Get counts for tabs - use ? for SQLite
     cursor.execute("SELECT COUNT(*) FROM adoption_requests WHERE status = 'Pending'")
     pending_count = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM adoption_requests WHERE status = 'Approved'")
@@ -1711,6 +1713,7 @@ def admin_applications():
     cursor.close()
     conn.close()
     
+    # Rest of the HTML remains exactly the same
     html = f'''
     <!DOCTYPE html>
     <html>
@@ -1773,9 +1776,9 @@ def admin_applications():
                 </a>
             </div>
             
-            <table>
+             <table>
                 <thead>
-                    <tr>
+                     <tr>
                         <th>ID</th>
                         <th>Dog</th>
                         <th>Applicant</th>
@@ -1785,7 +1788,7 @@ def admin_applications():
                         <th>Date</th>
                         <th>Status</th>
                         <th>Actions</th>
-                    </tr>
+                     </tr>
                 </thead>
                 <tbody>
     '''
@@ -1809,14 +1812,14 @@ def admin_applications():
         status_class = f"status-{status.lower()}"
         
         html += f'''
-                    <tr>
-                        <td>{request_id}</td>
-                        <td><strong>{dog_name}</strong></td>
-                        <td>{full_name}</td>
-                        <td>{email}</td>
-                        <td>{phone}</td>
-                        <td>{city}</td>
-                        <td>{request_date}</td>
+                     <tr>
+                         <td>{request_id}</td>
+                         <td><strong>{dog_name}</strong></td>
+                         <td>{full_name}</td>
+                         <td>{email}</td>
+                         <td>{phone}</td>
+                         <td>{city}</td>
+                         <td>{request_date}</td>
                         <td class="{status_class}">{status}</td>
                         <td class="action-buttons">
                             <button onclick="showDetails({request_id})" class="btn details-btn">📋 Details</button>
@@ -1828,8 +1831,8 @@ def admin_applications():
                                 <button type="submit" class="btn btn-approve" onclick="return confirmApprove()">✅ Approve</button>
                             </form>
                             <button onclick="showRejectModal({request_id})" class="btn btn-reject">❌ Reject</button>
-                    </td>
-                </tr>
+                     </td>
+                 </tr>
                 
                 <!-- Reject Modal -->
                 <div id="rejectModal_{request_id}" class="modal">
@@ -1848,8 +1851,8 @@ def admin_applications():
             '''
         else:
             html += f'''
-                        </td>
-                    </tr>
+                         </td>
+                     </tr>
             '''
         
         # Details Modal
@@ -1879,7 +1882,7 @@ def admin_applications():
     
     html += '''
                 </tbody>
-            </table>
+             </table>
         </div>
         
         <script>
@@ -1916,6 +1919,7 @@ def admin_applications():
     return html
 
 # ==================== ADMIN - APPROVE APPLICATION ====================
+# ==================== ADMIN - APPROVE APPLICATION ====================
 @app.route('/admin/approve_application/<int:request_id>', methods=['POST'])
 def admin_approve_application(request_id):
     if not session.get('admin_logged_in'):
@@ -1925,12 +1929,12 @@ def admin_approve_application(request_id):
     cursor = conn.cursor()
     
     try:
-        # Get application details
+        # Get application details - use ? for SQLite
         cursor.execute("""
             SELECT r.full_name, r.email, d.name as dog_name, r.dog_id
             FROM adoption_requests r
             LEFT JOIN dogs d ON r.dog_id = d.dog_id
-            WHERE r.request_id = %s
+            WHERE r.request_id = ?
         """, (request_id,))
         application = cursor.fetchone()
         
@@ -1940,13 +1944,13 @@ def admin_approve_application(request_id):
             dog_name = application[2] if application[2] else "a dog"
             dog_id = application[3]
             
-            # Update application status
+            # Update application status - use CURRENT_TIMESTAMP for SQLite
             cursor.execute("""
                 UPDATE adoption_requests 
                 SET status = 'Approved', 
-                    reviewed_by = %s, 
-                    reviewed_date = NOW()
-                WHERE request_id = %s
+                    reviewed_by = ?, 
+                    reviewed_date = CURRENT_TIMESTAMP
+                WHERE request_id = ?
             """, (session.get('admin_id'), request_id))
             
             # Update dog status if this was for a specific dog
@@ -1954,8 +1958,8 @@ def admin_approve_application(request_id):
                 cursor.execute("""
                     UPDATE dogs 
                     SET status = 'Adopted', 
-                        adopted_date = CURDATE() 
-                    WHERE dog_id = %s
+                        adopted_date = DATE('now')
+                    WHERE dog_id = ?
                 """, (dog_id,))
             
             conn.commit()
@@ -1973,7 +1977,7 @@ def admin_approve_application(request_id):
         conn.close()
     
     return redirect(url_for('admin_applications', status='Pending'))
-
+# ==================== ADMIN - REJECT APPLICATION ====================
 # ==================== ADMIN - REJECT APPLICATION ====================
 @app.route('/admin/reject_application/<int:request_id>', methods=['POST'])
 def admin_reject_application(request_id):
@@ -1986,12 +1990,12 @@ def admin_reject_application(request_id):
     cursor = conn.cursor()
     
     try:
-        # Get application details
+        # Get application details - use ? for SQLite
         cursor.execute("""
             SELECT r.full_name, r.email, d.name as dog_name, r.dog_id
             FROM adoption_requests r
             LEFT JOIN dogs d ON r.dog_id = d.dog_id
-            WHERE r.request_id = %s
+            WHERE r.request_id = ?
         """, (request_id,))
         application = cursor.fetchone()
         
@@ -2001,14 +2005,14 @@ def admin_reject_application(request_id):
             dog_name = application[2] if application[2] else "a dog"
             dog_id = application[3]
             
-            # Update application status
+            # Update application status - use CURRENT_TIMESTAMP for SQLite
             cursor.execute("""
                 UPDATE adoption_requests 
                 SET status = 'Rejected', 
-                    review_notes = %s,
-                    reviewed_by = %s, 
-                    reviewed_date = NOW()
-                WHERE request_id = %s
+                    review_notes = ?,
+                    reviewed_by = ?, 
+                    reviewed_date = CURRENT_TIMESTAMP
+                WHERE request_id = ?
             """, (review_notes, session.get('admin_id'), request_id))
             
             # Make dog available again if it was pending adoption
@@ -2016,7 +2020,7 @@ def admin_reject_application(request_id):
                 cursor.execute("""
                     UPDATE dogs 
                     SET status = 'Available' 
-                    WHERE dog_id = %s AND status = 'Pending Adoption'
+                    WHERE dog_id = ? AND status = 'Pending Adoption'
                 """, (dog_id,))
             
             conn.commit()
@@ -2034,7 +2038,6 @@ def admin_reject_application(request_id):
         conn.close()
     
     return redirect(url_for('admin_applications', status='Pending'))
-
 # ==================== EMAIL FUNCTIONS FOR ADOPTION ====================
 def send_approval_email(name, email, dog_name):
     """Send approval email to applicant"""
