@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify, send_from_directory
 import sqlite3
 from datetime import date, datetime
 import smtplib
@@ -36,6 +36,35 @@ def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
+
+def get_image_url(image_path):
+    """Helper function to get correct image URL"""
+    if not image_path:
+        return "/static/images/default_dog.jpg"
+    
+    # If it already starts with /static, use as is
+    if image_path.startswith('/static/'):
+        return image_path
+    
+    # If it's a filename only (like dog1.jpg)
+    if not '/' in image_path and not '\\' in image_path:
+        # Check if it exists in static/images
+        if os.path.exists(f'static/images/{image_path}'):
+            return f"/static/images/{image_path}"
+        # Check if it exists in static/uploads
+        if os.path.exists(f'static/uploads/{image_path}'):
+            return f"/static/uploads/{image_path}"
+    
+    # If it has path but doesn't start with /static
+    if image_path.startswith('static/'):
+        return f"/{image_path}"
+    
+    # Check if the file exists
+    if os.path.exists(image_path):
+        return f"/{image_path}"
+    
+    # Default fallback
+    return "/static/images/default_dog.jpg"
 
 def init_db():
     """Create all tables automatically if they don't exist"""
@@ -144,21 +173,21 @@ def init_db():
     # Insert default admin user if not exists
     cursor.execute("SELECT * FROM users WHERE username = 'admin'")
     if not cursor.fetchone():
-        # Simple password hash (you can use a better method in production)
         cursor.execute("""
             INSERT INTO users (username, password, role, email)
             VALUES ('admin', 'admin123', 'admin', 'admin@streetdogwelfare.org')
         """)
     
-    # Insert sample dogs if table is empty
+    # Insert sample dogs if table is empty (using your actual image names)
     cursor.execute("SELECT COUNT(*) FROM dogs")
     if cursor.fetchone()[0] == 0:
         sample_dogs = [
-            ('Max', 'MG Road, Bangalore', 'Central', 'Young', 'Male', 'Healthy', 1, 1, 'Friendly and playful', 'Dry Food', 'Morning', 'None', None, 'Available', str(date.today()), None),
-            ('Bella', 'Indiranagar, Bangalore', 'East', 'Adult', 'Female', 'Vaccinated', 1, 1, 'Gentle and calm', 'Wet Food', 'Evening', 'Needs daily walk', None, 'Available', str(date.today()), None),
-            ('Rocky', 'Koramangala, Bangalore', 'South', 'Puppy', 'Male', 'Healthy', 0, 0, 'Energetic and curious', 'Milk', 'Both', 'Puppy training needed', None, 'Available', str(date.today()), None),
-            ('Lucy', 'Whitefield, Bangalore', 'East', 'Senior', 'Female', 'Needs Care', 1, 1, 'Loves cuddles', 'Soft Food', 'Morning', 'Arthritis medication', None, 'Available', str(date.today()), None),
-            ('Charlie', 'Jayanagar, Bangalore', 'South', 'Adult', 'Male', 'Healthy', 1, 1, 'Good with kids', 'Dry Food', 'Evening', 'None', None, 'Available', str(date.today()), None)
+            ('Max', 'MG Road, Bangalore', 'Central', 'Young', 'Male', 'Healthy', 1, 1, 'Friendly and playful', 'Dry Food', 'Morning', 'None', 'dog1.jpg', 'Available', str(date.today()), None),
+            ('Bella', 'Indiranagar, Bangalore', 'East', 'Adult', 'Female', 'Vaccinated', 1, 1, 'Gentle and calm', 'Wet Food', 'Evening', 'Needs daily walk', 'dog2.jpg', 'Available', str(date.today()), None),
+            ('Rocky', 'Koramangala, Bangalore', 'South', 'Puppy', 'Male', 'Healthy', 0, 0, 'Energetic and curious', 'Milk', 'Both', 'Puppy training needed', 'dog3.jpg', 'Available', str(date.today()), None),
+            ('Lucy', 'Whitefield, Bangalore', 'East', 'Senior', 'Female', 'Needs Care', 1, 1, 'Loves cuddles', 'Soft Food', 'Morning', 'Arthritis medication', 'dog4.jpg', 'Available', str(date.today()), None),
+            ('Charlie', 'Jayanagar, Bangalore', 'South', 'Adult', 'Male', 'Healthy', 1, 1, 'Good with kids', 'Dry Food', 'Evening', 'None', 'dog5.jpg', 'Available', str(date.today()), None),
+            ('Daisy', 'Koramangala, Bangalore', 'South', 'Young', 'Female', 'Healthy', 1, 1, 'Playful and energetic', 'Both', 'Both', 'Loves toys', 'dog6.jpg', 'Available', str(date.today()), None)
         ]
         
         for dog in sample_dogs:
@@ -261,9 +290,7 @@ def send_volunteer_email(name, email):
     return send_email(email, subject, message)
 
 def send_approval_email(name, email, dog_name):
-    """Send approval email to applicant"""
     subject = f"🎉 Congratulations! Your Adoption Application for {dog_name} is Approved!"
-    
     message = f"""
     <html>
     <body style="font-family: Arial, sans-serif;">
@@ -285,15 +312,11 @@ def send_approval_email(name, email, dog_name):
     </body>
     </html>
     """
-    
     send_email(email, subject, message)
 
 def send_rejection_email(name, email, dog_name, reason):
-    """Send rejection email to applicant"""
     subject = f"Update on Your Adoption Application for {dog_name}"
-    
     reason_text = reason if reason else "We regret to inform you that your application could not be approved at this time."
-    
     message = f"""
     <html>
     <body style="font-family: Arial, sans-serif;">
@@ -310,10 +333,11 @@ def send_rejection_email(name, email, dog_name, reason):
     </body>
     </html>
     """
-    
     send_email(email, subject, message)
 
-# ==================== HOMEPAGE ====================
+# ==================== ROUTES ====================
+
+# Homepage
 @app.route('/')
 def index():
     conn = get_db()
@@ -432,11 +456,11 @@ def index():
         dog_location = dog['location']
         dog_age = dog['age']
         dog_health = dog['health_status']
-        image_path = dog['image_path'] if dog['image_path'] else 'static/images/default_dog.jpg'
+        image_url = get_image_url(dog['image_path'])
         
         html += f'''
                 <div class="dog-card">
-                    <div class="dog-image" style="background-image: url('/{image_path}');"></div>
+                    <div class="dog-image" style="background-image: url('{image_url}');"></div>
                     <div class="dog-info">
                         <h3>{dog_name}</h3>
                         <p>📍 Location: {dog_location}</p>
@@ -465,7 +489,7 @@ def index():
     '''
     return html
 
-# ==================== VIEW ALL DOGS ====================
+# View all dogs
 @app.route('/dogs')
 def dogs():
     conn = get_db()
@@ -506,10 +530,10 @@ def dogs():
     '''
     
     for dog in all_dogs:
-        image_path = dog['image_path'] if dog['image_path'] else 'static/images/default_dog.jpg'
+        image_url = get_image_url(dog['image_path'])
         html += f'''
         <div class="dog-card">
-            <div class="dog-image" style="background-image: url('/{image_path}');"></div>
+            <div class="dog-image" style="background-image: url('{image_url}');"></div>
             <div class="dog-info">
                 <h3>{dog['name']}</h3>
                 <p>📍 {dog['location']}</p>
@@ -531,7 +555,7 @@ def dogs():
     '''
     return html
 
-# ==================== DOG DETAILS ====================
+# Dog details
 @app.route('/dog/<int:dog_id>')
 def dog_detail(dog_id):
     conn = get_db()
@@ -544,7 +568,7 @@ def dog_detail(dog_id):
     if not dog:
         return "<h1>Dog not found</h1><a href='/'>Go Home</a>"
     
-    image_path = dog['image_path'] if dog['image_path'] else 'static/images/default_dog.jpg'
+    image_url = get_image_url(dog['image_path'])
     
     html = f'''
 <!DOCTYPE html>
@@ -558,7 +582,7 @@ def dog_detail(dog_id):
         .dog-image {{ 
             width: 300px; 
             height: 300px; 
-            background-image: url('/{image_path}');
+            background-image: url('{image_url}');
             background-size: cover;
             background-position: center;
             border-radius: 20px;
@@ -601,7 +625,7 @@ def dog_detail(dog_id):
     '''
     return html
 
-# ==================== DONATION PAGE ====================
+# Donation page
 @app.route('/donate', methods=['GET', 'POST'])
 def donate():
     dog_id = request.args.get('dog_id')
@@ -735,7 +759,7 @@ def donate():
     '''
     return html
 
-# ==================== ADOPTION PAGE ====================
+# Adoption page
 @app.route('/adopt')
 @app.route('/adopt/<dog_id>')
 def adopt(dog_id=None):
@@ -834,7 +858,7 @@ def adopt(dog_id=None):
     '''
     return html
 
-# ==================== ADOPTION SUBMISSION ====================
+# Adoption submission
 @app.route('/adopt_submit', methods=['POST'])
 def adopt_submit():
     dog_id = request.form.get('dog_id')
@@ -906,7 +930,7 @@ def adopt_submit():
     </html>
     '''
 
-# ==================== VOLUNTEER PAGE ====================
+# Volunteer page
 @app.route('/volunteer', methods=['GET', 'POST'])
 def volunteer():
     if request.method == 'POST':
@@ -996,7 +1020,7 @@ def volunteer():
     '''
     return html
 
-# ==================== REGISTER DOG PAGE ====================
+# Register dog page
 @app.route('/register_dog', methods=['GET', 'POST'])
 def register_dog():
     if request.method == 'POST':
@@ -1235,7 +1259,7 @@ def admin_dashboard():
     cursor.close()
     conn.close()
     
-    return f'''
+    html = f'''
     <!DOCTYPE html>
     <html>
     <head>
@@ -1286,33 +1310,25 @@ def admin_dashboard():
             <h2>Recent Dogs</h2>
             <table>
                 <thead>
-                    <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Image</th>
-                        <th>Name</th>
-                        <th>Location</th>
-                        <th>Health</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
+                    <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Health</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
     '''
     
     for dog in recent_dogs:
-        image_html = f'<img class="dog-image" src="/{dog["image_path"]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog["image_path"] else 'No Image'
+        image_url = get_image_url(dog['image_path'])
+        image_html = f'<img class="dog-image" src="{image_url}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog['image_path'] else 'No Image'
         html += f'''
                     <tr>
-                        <td>{dog["dog_id"]}</td>
+                        <td>{dog['dog_id']}</td>
                         <td>{image_html}</td>
-                        <td>{dog["name"]}</td>
-                        <td>{dog["location"]}</td>
-                        <td>{dog["health_status"]}</td>
-                        <td>{dog["status"]}</td>
+                        <td>{dog['name']}</td>
+                        <td>{dog['location']}</td>
+                        <td>{dog['health_status']}</td>
+                        <td>{dog['status']}</td>
                         <td>
-                            <a href="/admin/edit_dog/{dog["dog_id"]}" class="btn">Edit</a>
-                            <a href="/admin/delete_dog/{dog["dog_id"]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
+                            <a href="/admin/edit_dog/{dog['dog_id']}" class="btn">Edit</a>
+                            <a href="/admin/delete_dog/{dog['dog_id']}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
                         </td>
                     </tr>
         '''
@@ -1375,36 +1391,27 @@ def admin_dogs():
             <a href="/admin/add_dog" class="btn" style="margin-bottom: 20px;">➕ Add New Dog</a>
             <table>
                 <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Image</th>
-                        <th>Name</th>
-                        <th>Location</th>
-                        <th>Age</th>
-                        <th>Gender</th>
-                        <th>Health</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
+                    <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Age</th><th>Gender</th><th>Health</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
     '''
     
     for dog in dogs:
-        image_html = f'<img class="dog-image" src="/{dog["image_path"]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog["image_path"] else 'No Image'
+        image_url = get_image_url(dog['image_path'])
+        image_html = f'<img class="dog-image" src="{image_url}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog['image_path'] else 'No Image'
         html += f'''
                     <tr>
-                        <td>{dog["dog_id"]}</td>
+                        <td>{dog['dog_id']}</td>
                         <td>{image_html}</td>
-                        <td>{dog["name"]}</td>
-                        <td>{dog["location"]}</td>
-                        <td>{dog["age"]}</td>
-                        <td>{dog["gender"]}</td>
-                        <td>{dog["health_status"]}</td>
-                        <td>{dog["status"]}</td>
+                        <td>{dog['name']}</td>
+                        <td>{dog['location']}</td>
+                        <td>{dog['age']}</td>
+                        <td>{dog['gender']}</td>
+                        <td>{dog['health_status']}</td>
+                        <td>{dog['status']}</td>
                         <td>
-                            <a href="/admin/edit_dog/{dog["dog_id"]}" class="btn">Edit</a>
-                            <a href="/admin/delete_dog/{dog["dog_id"]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
+                            <a href="/admin/edit_dog/{dog['dog_id']}" class="btn">Edit</a>
+                            <a href="/admin/delete_dog/{dog['dog_id']}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
                         </td>
                     </tr>
         '''
@@ -1602,6 +1609,8 @@ def admin_edit_dog(dog_id):
     if not dog:
         return "Dog not found"
     
+    image_url = get_image_url(dog['image_path'])
+    
     html = f'''
     <!DOCTYPE html>
     <html>
@@ -1666,7 +1675,7 @@ def admin_edit_dog(dog_id):
                         <select name="status"><option {dog['status'] == 'Available' and 'selected' or ''}>Available</option><option {dog['status'] == 'Pending Adoption' and 'selected' or ''}>Pending Adoption</option><option {dog['status'] == 'Adopted' and 'selected' or ''}>Adopted</option></select>
                     </div>
                     <div><label>Current Photo</label><br>
-                        {'<img class="current-image" src="/' + dog['image_path'] + '">' if dog['image_path'] else 'No image'}
+                        {'<img class="current-image" src="' + image_url + '">' if dog['image_path'] else 'No image'}
                     </div>
                     <div><label>Upload New Photo</label><input type="file" name="image" accept="image/*"></div>
                     <button type="submit" class="btn">💾 Save Changes</button>
@@ -1700,7 +1709,6 @@ def admin_applications():
     if not session.get('admin_logged_in'):
         return redirect(url_for('admin_login'))
     
-    # Get filter from URL
     status_filter = request.args.get('status', 'Pending')
     
     conn = get_db()
@@ -1734,7 +1742,6 @@ def admin_applications():
     
     applications = cursor.fetchall()
     
-    # Get counts for tabs
     cursor.execute("SELECT COUNT(*) FROM adoption_requests WHERE status = 'Pending'")
     pending_count = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM adoption_requests WHERE status = 'Approved'")
@@ -1937,7 +1944,6 @@ def admin_applications():
                 return confirm('Are you sure you want to APPROVE this adoption application?\\n\\nThe applicant will receive an email notification.');
             }
             
-            // Close modal when clicking outside
             window.onclick = function(event) {
                 if (event.target.classList.contains('modal')) {
                     event.target.style.display = 'none';
@@ -1949,7 +1955,7 @@ def admin_applications():
     '''
     return html
 
-# ==================== ADMIN - APPROVE APPLICATION ====================
+# Admin - Approve application
 @app.route('/admin/approve_application/<int:request_id>', methods=['POST'])
 def admin_approve_application(request_id):
     if not session.get('admin_logged_in'):
@@ -1959,7 +1965,6 @@ def admin_approve_application(request_id):
     cursor = conn.cursor()
     
     try:
-        # Get application details
         cursor.execute("""
             SELECT r.full_name, r.email, d.name as dog_name, r.dog_id
             FROM adoption_requests r
@@ -1974,7 +1979,6 @@ def admin_approve_application(request_id):
             dog_name = application['dog_name'] if application['dog_name'] else "a dog"
             dog_id = application['dog_id']
             
-            # Update application status
             cursor.execute("""
                 UPDATE adoption_requests 
                 SET status = 'Approved', 
@@ -1983,7 +1987,6 @@ def admin_approve_application(request_id):
                 WHERE request_id = ?
             """, (session.get('admin_id'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), request_id))
             
-            # Update dog status if this was for a specific dog
             if dog_id:
                 cursor.execute("""
                     UPDATE dogs 
@@ -1993,11 +1996,7 @@ def admin_approve_application(request_id):
                 """, (str(date.today()), dog_id))
             
             conn.commit()
-            
-            # Send approval email
             send_approval_email(full_name, email, dog_name)
-            
-            print(f"✅ Application {request_id} approved for {full_name}")
             
     except Exception as e:
         print(f"Error approving application: {e}")
@@ -2008,7 +2007,7 @@ def admin_approve_application(request_id):
     
     return redirect(url_for('admin_applications', status='Pending'))
 
-# ==================== ADMIN - REJECT APPLICATION ====================
+# Admin - Reject application
 @app.route('/admin/reject_application/<int:request_id>', methods=['POST'])
 def admin_reject_application(request_id):
     if not session.get('admin_logged_in'):
@@ -2020,7 +2019,6 @@ def admin_reject_application(request_id):
     cursor = conn.cursor()
     
     try:
-        # Get application details
         cursor.execute("""
             SELECT r.full_name, r.email, d.name as dog_name, r.dog_id
             FROM adoption_requests r
@@ -2035,7 +2033,6 @@ def admin_reject_application(request_id):
             dog_name = application['dog_name'] if application['dog_name'] else "a dog"
             dog_id = application['dog_id']
             
-            # Update application status
             cursor.execute("""
                 UPDATE adoption_requests 
                 SET status = 'Rejected', 
@@ -2045,7 +2042,6 @@ def admin_reject_application(request_id):
                 WHERE request_id = ?
             """, (review_notes, session.get('admin_id'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), request_id))
             
-            # Make dog available again if it was pending adoption
             if dog_id:
                 cursor.execute("""
                     UPDATE dogs 
@@ -2054,11 +2050,7 @@ def admin_reject_application(request_id):
                 """, (dog_id,))
             
             conn.commit()
-            
-            # Send rejection email
             send_rejection_email(full_name, email, dog_name, review_notes)
-            
-            print(f"❌ Application {request_id} rejected for {full_name}")
             
     except Exception as e:
         print(f"Error rejecting application: {e}")
@@ -2069,7 +2061,7 @@ def admin_reject_application(request_id):
     
     return redirect(url_for('admin_applications', status='Pending'))
 
-# ==================== ADMIN LOGOUT ====================
+# Admin logout
 @app.route('/admin/logout')
 def admin_logout():
     session.clear()
@@ -2078,14 +2070,9 @@ def admin_logout():
 # ==================== RUN APP ====================
 if __name__ == '__main__':
     # Create necessary folders
+    os.makedirs('static', exist_ok=True)
     os.makedirs('static/images', exist_ok=True)
     os.makedirs('static/uploads', exist_ok=True)
-    
-    # Create a default dog image if it doesn't exist
-    default_image_path = 'static/images/default_dog.jpg'
-    if not os.path.exists(default_image_path):
-        # Create a simple placeholder image using HTML/CSS or just leave it
-        print("ℹ️ Note: Default dog image not found. The app will show 'No Image' for dogs without photos.")
     
     print("=" * 50)
     print("🐕 Street Dog Welfare Management System")
@@ -2093,6 +2080,7 @@ if __name__ == '__main__':
     print("✅ Database: SQLite (street_dog_welfare.db)")
     print("✅ Admin Login: admin / admin123")
     print("✅ Server: http://localhost:5000")
+    print("✅ Images: Using your images from static/images/")
     print("=" * 50)
     
     app.run(debug=True, host='0.0.0.0', port=5000)
