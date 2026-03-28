@@ -1146,7 +1146,8 @@ def admin_login():
         
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, role FROM users WHERE username = %s AND password = %s", (username, password))
+        # Use ? for SQLite compatibility
+        cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password = ?", (username, password))
         user = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -1163,7 +1164,7 @@ def admin_login():
             </script>
             '''
     
-    return '''
+    return ''' [rest of your login HTML] '''
     <!DOCTYPE html>
     <html>
     <head>
