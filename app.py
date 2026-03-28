@@ -1,6 +1,3 @@
-import sqlite3
-IS_RENDER = os.environ.get('RENDER', False)
-
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 import mysql.connector
 from datetime import date, datetime
