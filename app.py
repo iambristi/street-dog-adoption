@@ -12,6 +12,12 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
+import sqlite3
+import os
+
+# Detect if running on Render
+IS_RENDER = os.environ.get('RENDER', False)
+
 # ==================== UPLOAD CONFIGURATION ====================
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -29,12 +35,182 @@ EMAIL_PORT = 587
 
 # ==================== DATABASE CONNECTION ====================
 def get_db():
-    return mysql.connector.connect(
-        host='localhost',
-        user='root',
-        password='',
-        database='street_dog_welfare'
-    )
+    if IS_RENDER:
+        # On Render - use SQLite
+        conn = sqlite3.connect('dogs.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Create all tables if they don't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                email TEXT,
+                role TEXT DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dogs (
+                dog_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                location TEXT NOT NULL,
+                area TEXT,
+                age TEXT,
+                gender TEXT,
+                health_status TEXT,
+                vaccination INTEGER DEFAULT 0,
+                sterilized INTEGER DEFAULT 0,
+                personality TEXT,
+                food_type TEXT,
+                feeding_time TEXT,
+                special_needs TEXT,
+                image_path TEXT,
+                status TEXT DEFAULT 'Available',
+                created_date DATE,
+                adopted_date DATE,
+                is_active INTEGER DEFAULT 1
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS donors (
+                donor_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                city TEXT,
+                donation_date DATE,
+                amount REAL
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS donations (
+                donation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                donor_id INTEGER,
+                dog_id INTEGER,
+                amount REAL NOT NULL,
+                purpose TEXT,
+                donation_date DATE,
+                status TEXT DEFAULT 'Completed',
+                payment_id TEXT,
+                FOREIGN KEY (donor_id) REFERENCES donors(donor_id),
+                FOREIGN KEY (dog_id) REFERENCES dogs(dog_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS adoption_requests (
+                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dog_id INTEGER,
+                full_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                address TEXT,
+                city TEXT,
+                home_type TEXT,
+                has_pets TEXT,
+                reason TEXT,
+                request_date DATE,
+                status TEXT DEFAULT 'Pending',
+                reviewed_by INTEGER,
+                review_notes TEXT,
+                reviewed_date TIMESTAMP,
+                approved_date DATE,
+                FOREIGN KEY (dog_id) REFERENCES dogs(dog_id),
+                FOREIGN KEY (reviewed_by) REFERENCES users(user_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS volunteers (
+                volunteer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                availability TEXT,
+                skills TEXT,
+                joined_date DATE
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS feeding_schedules (
+                schedule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dog_id INTEGER,
+                volunteer_id INTEGER,
+                feeding_date DATE,
+                feeding_time TEXT,
+                food_provided TEXT,
+                quantity TEXT,
+                notes TEXT,
+                completed INTEGER DEFAULT 0,
+                FOREIGN KEY (dog_id) REFERENCES dogs(dog_id),
+                FOREIGN KEY (volunteer_id) REFERENCES volunteers(volunteer_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS expenses (
+                expense_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                expense_type TEXT,
+                amount REAL,
+                description TEXT,
+                expense_date DATE,
+                dog_id INTEGER,
+                receipt_path TEXT,
+                FOREIGN KEY (dog_id) REFERENCES dogs(dog_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                email TEXT,
+                phone TEXT,
+                subject TEXT,
+                message TEXT,
+                category TEXT,
+                sent_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_read INTEGER DEFAULT 0,
+                replied INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Insert admin user if not exists
+        cursor.execute("SELECT * FROM users WHERE username = 'admin'")
+        admin = cursor.fetchone()
+        if not admin:
+            cursor.execute("INSERT INTO users (username, password, email, role) VALUES ('admin', 'admin123', 'admin@streetdogwelfare.org', 'admin')")
+        
+        # Insert sample dogs if table is empty
+        cursor.execute("SELECT COUNT(*) FROM dogs")
+        dog_count = cursor.fetchone()[0]
+        if dog_count == 0:
+            cursor.execute('''
+                INSERT INTO dogs (name, location, area, age, gender, health_status, vaccination, sterilized, personality, food_type, feeding_time, status, created_date)
+                VALUES 
+                ('Tommy', 'MG Road near Coffee Day', 'MG Road Zone', 'Adult', 'Male', 'Healthy', 1, 1, 'Friendly, loves people', 'Dry Food', 'Evening', 'Available', date('now')),
+                ('Brownie', 'Central Park near Bench', 'Central Park', 'Puppy', 'Female', 'Injured', 0, 0, 'Shy but gentle', 'Milk + Soft food', 'Morning', 'Available', date('now')),
+                ('Blacky', 'Railway Station Platform 1', 'Railway Station', 'Adult', 'Male', 'Vaccinated', 1, 1, 'Protective, loyal', 'Dry Food', 'Both', 'Available', date('now'))
+            ''')
+        
+        conn.commit()
+        return conn
+    else:
+        # On your computer - use MySQL
+        import mysql.connector
+        return mysql.connector.connect(
+            host='localhost',
+            user='root',
+            password='',
+            database='street_dog_welfare'
+        )
 
 # ==================== EMAIL FUNCTIONS ====================
 def send_email(to_email, subject, message):
