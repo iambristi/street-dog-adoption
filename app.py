@@ -53,6 +53,12 @@ def get_db():
             )
         ''')
         
+        # Insert admin user (ONLY ONCE - keep this one)
+        cursor.execute("SELECT * FROM users WHERE username = 'admin'")
+        admin = cursor.fetchone()
+        if not admin:
+            cursor.execute("INSERT INTO users (username, password, email, role) VALUES ('admin', 'admin123', 'admin@streetdogwelfare.org', 'admin')")
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS dogs (
                 dog_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,12 +188,6 @@ def get_db():
             )
         ''')
         
-        # Insert admin user if not exists
-        cursor.execute("SELECT * FROM users WHERE username = 'admin'")
-        admin = cursor.fetchone()
-        if not admin:
-            cursor.execute("INSERT INTO users (username, password, email, role) VALUES ('admin', 'admin123', 'admin@streetdogwelfare.org', 'admin')")
-        
         # Insert sample dogs if table is empty
         cursor.execute("SELECT COUNT(*) FROM dogs")
         dog_count = cursor.fetchone()[0]
@@ -211,7 +211,6 @@ def get_db():
             password='',
             database='street_dog_welfare'
         )
-
 # ==================== EMAIL FUNCTIONS ====================
 def send_email(to_email, subject, message):
     try:
