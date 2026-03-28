@@ -1097,29 +1097,27 @@ def admin_dashboard():
             
             <h2>Recent Dogs</h2>
             <table>
-                <thead><tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Health</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
+                <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Health</th><th>Status</th><th>Actions</th></tr>
     '''
     
     for dog in recent_dogs:
         image_html = f'<img class="dog-image" src="/{dog[4]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog[4] else 'No Image'
         html += f'''
-                    <tr>
-                        <td>{dog[0]}</td>
-                        <td>{image_html}</td>
-                        <td>{dog[1]}</td>
-                        <td>{dog[2]}</td>
-                        <td>{dog[3]}</td>
-                        <td>{dog[5]}</td>
-                        <td>
-                            <a href="/admin/edit_dog/{dog[0]}" class="btn">Edit</a>
-                            <a href="/admin/delete_dog/{dog[0]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
-                        </td>
-                    </tr>
+                <tr>
+                    <td>{dog[0]}</td>
+                    <td>{image_html}</td>
+                    <td>{dog[1]}</td>
+                    <td>{dog[2]}</td>
+                    <td>{dog[3]}</td>
+                    <td>{dog[5]}</td>
+                    <td>
+                        <a href="/admin/edit_dog/{dog[0]}" class="btn">Edit</a>
+                        <a href="/admin/delete_dog/{dog[0]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
+                    </td>
+                </tr>
         '''
     
     html += '''
-                </tbody>
             </table>
         </div>
     </body>
@@ -1175,31 +1173,29 @@ def admin_dogs():
             <h1>🐕 Manage Dogs</h1>
             <a href="/admin/add_dog" class="btn" style="margin-bottom: 20px;">➕ Add New Dog</a>
             <table>
-                <thead><tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Age</th><th>Gender</th><th>Health</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
+                <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Age</th><th>Gender</th><th>Health</th><th>Status</th><th>Actions</th></tr>
     '''
     
     for dog in dogs:
         image_html = f'<img class="dog-image" src="/{dog[7]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog[7] else 'No Image'
         html += f'''
-                    <tr>
-                        <td>{dog[0]}</td>
-                        <td>{image_html}</td>
-                        <td>{dog[1]}</td>
-                        <td>{dog[2]}</td>
-                        <td>{dog[3]}</td>
-                        <td>{dog[4]}</td>
-                        <td>{dog[5]}</td>
-                        <td>{dog[6]}</td>
-                        <td>
-                            <a href="/admin/edit_dog/{dog[0]}" class="btn">Edit</a>
-                            <a href="/admin/delete_dog/{dog[0]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
-                        </td>
-                    </tr>
+                <tr>
+                    <td>{dog[0]}</td>
+                    <td>{image_html}</td>
+                    <td>{dog[1]}</td>
+                    <td>{dog[2]}</td>
+                    <td>{dog[3]}</td>
+                    <td>{dog[4]}</td>
+                    <td>{dog[5]}</td>
+                    <td>{dog[6]}</td>
+                    <td>
+                        <a href="/admin/edit_dog/{dog[0]}" class="btn">Edit</a>
+                        <a href="/admin/delete_dog/{dog[0]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
+                    </td>
+                </tr>
         '''
     
     html += '''
-                </tbody>
             </table>
         </div>
     </body>
