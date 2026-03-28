@@ -1,4 +1,8 @@
+import sqlite3
+IS_RENDER = os.environ.get('RENDER', False)
+
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
+import mysql.connector
 from datetime import date, datetime
 import smtplib
 from email.mime.text import MIMEText
@@ -33,6 +37,7 @@ EMAIL_PORT = 587
 # ==================== DATABASE CONNECTION ====================
 def get_db():
     if IS_RENDER:
+        # On Render - use SQLite
         conn = sqlite3.connect('dogs.db')
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -144,6 +149,7 @@ def get_db():
         conn.commit()
         return conn
     else:
+        # On your computer - use MySQL
         import mysql.connector
         return mysql.connector.connect(
             host='localhost',
@@ -257,7 +263,11 @@ def index():
     cursor.execute("SELECT COUNT(*) FROM adoption_requests WHERE status = 'Pending'")
     pending_adoptions = cursor.fetchone()[0]
     
-    cursor.execute("SELECT dog_id, name, location, age, health_status, image_path FROM dogs WHERE status = 'Available' ORDER BY created_date DESC LIMIT 6")
+    if IS_RENDER:
+        cursor.execute("SELECT dog_id, name, location, age, health_status, image_path FROM dogs WHERE status = 'Available' ORDER BY created_date DESC LIMIT 6")
+    else:
+        cursor.execute("SELECT dog_id, name, location, age, health_status, image_path FROM dogs WHERE status = 'Available' ORDER BY created_date DESC LIMIT 6")
+    
     recent_dogs = cursor.fetchall()
     
     cursor.close()
@@ -393,7 +403,12 @@ def index():
 def dogs():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT dog_id, name, location, age, health_status, status, image_path FROM dogs ORDER BY dog_id")
+    
+    if IS_RENDER:
+        cursor.execute("SELECT dog_id, name, location, age, health_status, status, image_path FROM dogs ORDER BY dog_id")
+    else:
+        cursor.execute("SELECT dog_id, name, location, age, health_status, status, image_path FROM dogs ORDER BY dog_id")
+    
     all_dogs = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -1273,7 +1288,15 @@ def admin_dashboard():
             <h2>Recent Dogs</h2>
             <table>
                 <thead>
-                    <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Health</th><th>Status</th><th>Actions</th></tr>
+                    <tr>
+                        <th>ID</th>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Location</th>
+                        <th>Health</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
                 </thead>
                 <tbody>
     '''
@@ -1350,9 +1373,19 @@ def admin_dogs():
         <div class="content">
             <h1> Manage Dogs</h1>
             <a href="/admin/add_dog" class="btn" style="margin-bottom: 20px;"> Add New Dog</a>
-            表
+            <table>
                 <thead>
-                    <tr><th>ID</th><th>Image</th><th>Name</th><th>Location</th><th>Age</th><th>Gender</th><th>Health</th><th>Status</th><th>Actions</th> </>
+                    <tr>
+                        <th>ID</th>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Location</th>
+                        <th>Age</th>
+                        <th>Gender</th>
+                        <th>Health</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
                 </thead>
                 <tbody>
     '''
@@ -1361,24 +1394,24 @@ def admin_dogs():
         image_html = f'<img class="dog-image" src="/{dog[7]}" onerror="this.src=\'/static/images/default_dog.jpg\'">' if dog[7] else 'No Image'
         html += f'''
                     <tr>
-                         Generally{dog[0]}职
-                         Generally{image_html}职
-                         Generally{dog[1]}职
-                         Generally{dog[2]}职
-                         Generally{dog[3] if dog[3] else ''}职
-                         Generally{dog[4] if dog[4] else ''}职
-                         Generally{dog[5]}职
-                         Generally{dog[6]}职
-                         Generally
+                        <td>{dog[0]}</td>
+                        <td>{image_html}</td>
+                        <td>{dog[1]}</td>
+                        <td>{dog[2]}</td>
+                        <td>{dog[3] if dog[3] else ''}</td>
+                        <td>{dog[4] if dog[4] else ''}</td>
+                        <td>{dog[5]}</td>
+                        <td>{dog[6]}</td>
+                        <td>
                             <a href="/admin/edit_dog/{dog[0]}" class="btn">Edit</a>
                             <a href="/admin/delete_dog/{dog[0]}" class="btn btn-danger" onclick="return confirm('Delete this dog?')">Delete</a>
-                        职
-                    责任
+                        </td>
+                    </tr>
         '''
     
     html += '''
                 </tbody>
-            表
+            </table>
         </div>
     </body>
     </html>
@@ -1807,9 +1840,19 @@ def admin_applications():
                 <a href="/admin/applications?status=All" class="tab {'active' if status_filter == 'All' else ''}"> All</a>
             </div>
             
-            表
+            <table>
                 <thead>
-                    <tr><th>ID</th><th>Dog</th><th>Applicant</th><th>Email</th><th>Phone</th><th>City</th><th>Date</th><th>Status</th><th>Actions</th> </>
+                    <tr>
+                        <th>ID</th>
+                        <th>Dog</th>
+                        <th>Applicant</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>City</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
                 </thead>
                 <tbody>
     '''
@@ -1828,15 +1871,15 @@ def admin_applications():
         
         html += f'''
                     <tr>
-                         Generally{request_id}职
-                         Generally<strong>{dog_name}</strong>职
-                         Generally{full_name}职
-                         Generally{email}职
-                         Generally{phone}职
-                         Generally{city}职
-                         Generally{request_date}职
-                        <td class="{status_class}">{status}职
-                         Generally
+                        <td>{request_id}</td>
+                        <td><strong>{dog_name}</strong></td>
+                        <td>{full_name}</td>
+                        <td>{email}</td>
+                        <td>{phone}</td>
+                        <td>{city}</td>
+                        <td>{request_date}</td>
+                        <td class="{status_class}">{status}</td>
+                        <td>
         '''
         
         if status == 'Pending':
@@ -1851,13 +1894,13 @@ def admin_applications():
             '''
         
         html += '''
-                        职
-                    责任
+                        </td>
+                    </tr>
         '''
     
     html += '''
                 </tbody>
-            表
+            </table>
         </div>
     </body>
     </html>
@@ -2024,6 +2067,57 @@ def admin_reject_application(request_id):
 def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
+
+# ==================== EMAIL FUNCTIONS FOR ADOPTION ====================
+def send_approval_email(name, email, dog_name):
+    subject = f"Congratulations! Your Adoption Application for {dog_name} is Approved!"
+    
+    message = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
+            <h1 style="color: #27ae60;">Congratulations, {name}!</h1>
+            <p>Your adoption application for <strong>{dog_name}</strong> has been APPROVED!</p>
+            <p><strong>Next Steps:</strong></p>
+            <ul>
+                <li>Our team will contact you within 24 hours to schedule a meet-and-greet</li>
+                <li>You will get to spend time with {dog_name} before finalizing adoption</li>
+                <li>Adoption documents will be shared with you</li>
+                <li>A quick home visit will be arranged to ensure a safe environment</li>
+            </ul>
+            <p>Thank you for giving a street dog a forever home!</p>
+            <br>
+            <p>Warm regards,<br><strong>Street Dog Welfare Trust</strong></p>
+            <p><small>Contact us: +91 80 1234 5678 | adopt@streetdogwelfare.org</small></p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    send_email(email, subject, message)
+
+def send_rejection_email(name, email, dog_name, reason):
+    subject = f"Update on Your Adoption Application for {dog_name}"
+    
+    reason_text = reason if reason else "We regret to inform you that your application could not be approved at this time."
+    
+    message = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
+            <h1 style="color: #e74c3c;">Update on Your Application</h1>
+            <p>Dear {name},</p>
+            <p>Thank you for your interest in adopting <strong>{dog_name}</strong>. After careful review, we regret to inform you that your application could not be approved at this time.</p>
+            <p><strong>Reason:</strong> {reason_text}</p>
+            <p>We encourage you to look at other wonderful dogs available for adoption on our website.</p>
+            <br>
+            <p>Thank you for your understanding,<br><strong>Street Dog Welfare Trust</strong></p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    send_email(email, subject, message)
 
 # ==================== RUN APP ====================
 if __name__ == '__main__':
